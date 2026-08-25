@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#17181A">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<title>Registro de Treino</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #17181A;
+    --surface: #212325;
+    --surface-2: #2A2D30;
+    --line: #34373A;
+    --chalk: #EDEAE3;
+    --chalk-dim: #9A9C9E;
+    --steel: #5B8FA3;
+    --steel-dim: #3E6472;
+    --amber: #D9A441;
+    --rust: #B5533C;
+    --green: #6B9B6E;
+    --radius: 14px;
+  }
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--chalk);
+    font-family: 'Inter', system-ui, sans-serif;
+    overscroll-behavior-y: contain;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  h1,h2,h3, .display{ font-family:'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.03em; margin:0; }
+  .mono{ font-family:'JetBrains Mono', monospace; }
+  #app{ max-width: 480px; margin: 0 auto; min-height: 100vh; display:flex; flex-direction:column; }
+
+  header.topbar{
+    display:flex; align-items:center; gap:12px;
+    padding: 18px 18px 14px;
+    position: sticky; top:0; background: var(--bg); z-index: 10;
+    border-bottom: 1px solid var(--line);
+  }
+  header.topbar .back{
+    width:36px;height:36px;border-radius:50%;background:var(--surface);
+    display:flex;align-items:center;justify-content:center;border:1px solid var(--line);
+    font-size:18px; color:var(--chalk); cursor:pointer; flex-shrink:0;
+  }
+  header.topbar h1{ font-size: 20px; font-weight:600; }
+  header.topbar .sub{ font-size:11px; color:var(--chalk-dim); letter-spacing:0.08em; margin-top:2px; }
+
+  main{ flex:1; padding: 16px 16px 100px; }
+  .screen{ display:none; animation: fade .18s ease; }
+  .screen.active{ display:block; }
+  @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
+
+  .card{
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  /* Home: day cards */
+  .day-card{
+    display:flex; justify-content:space-between; align-items:center;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--steel-dim);
+    border-radius: var(--radius);
+    padding: 16px 16px;
+    margin-bottom: 12px;
+    cursor:pointer;
+    transition: border-color .15s, transform .1s;
+  }
+  .day-card:active{ transform: scale(0.98); }
+  .day-card.overdue{ border-left-color: var(--amber); }
+  .day-card.hot{ border-left-color: var(--rust); }
+  .day-card .name{ font-size:17px; font-weight:600; margin-bottom:4px; }
+  .day-card .exlist{ font-size:12px; color: var(--chalk-dim); }
+  .day-card .days-since{ text-align:right; flex-shrink:0; padding-left:12px; }
+  .day-card .days-num{ font-family:'Oswald'; font-size:28px; font-weight:600; line-height:1; }
+  .day-card .days-label{ font-size:10px; color:var(--chalk-dim); text-transform:uppercase; letter-spacing:.06em; }
+  .day-card.overdue .days-num{ color: var(--amber); }
+  .day-card.hot .days-num{ color: var(--rust); }
+  .day-card.fresh .days-num{ color: var(--green); }
+
+  .empty{
+    text-align:center; padding: 60px 20px; color: var(--chalk-dim);
+  }
+  .empty .display{ font-size:22px; color:var(--chalk); margin-bottom:8px; }
+  .empty p{ font-size:14px; line-height:1.5; margin: 0 0 20px; }
+
+  button.primary{
+    width:100%; padding:15px; border:none; border-radius: 12px;
+    background: var(--steel); color:#0E1416; font-family:'Oswald'; font-size:15px;
+    font-weight:600; letter-spacing:0.04em; text-transform:uppercase; cursor:pointer;
+  }
+  button.primary:active{ background: var(--steel-dim); }
+  button.ghost{
+    width:100%; padding:14px; border:1px solid var(--line); border-radius:12px;
+    background:transparent; color:var(--chalk); font-family:'Oswald'; font-size:14px;
+    text-transform:uppercase; letter-spacing:.04em; cursor:pointer; margin-top:8px;
+  }
+  button.danger{ color: var(--rust); border-color: var(--rust); }
+  button.icon-btn{
+    background:var(--surface-2); border:1px solid var(--line); color:var(--chalk);
+    border-radius:10px; width:40px; height:40px; font-size:18px; cursor:pointer;
+  }
+
+  /* Bottom nav */
+  nav.bottomnav{
+    position: fixed; bottom:0; left:0; right:0;
+    max-width:480px; margin:0 auto;
+    background: var(--surface); border-top: 1px solid var(--line);
+    display:flex; padding: 8px calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-bottom)) 8px;
+    z-index: 20;
+  }
+  nav.bottomnav .navbtn{
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding:8px 0; color: var(--chalk-dim); cursor:pointer; font-size:10px;
+    text-transform:uppercase; letter-spacing:.05em; font-family:'Oswald';
+  }
+  nav.bottomnav .navbtn.active{ color: var(--steel); }
+  nav.bottomnav .navbtn .ic{ font-size:20px; }
+
+  /* Log screen */
+  .exercise-block{ margin-bottom: 18px; }
+  .exercise-block h3{ font-size:16px; margin-bottom:2px; }
+  .prev-ref{
+    font-size:12px; color: var(--chalk-dim); margin-bottom:10px; font-family:'JetBrains Mono';
+  }
+  .set-row{
+    display:flex; align-items:center; gap:8px; margin-bottom:8px;
+  }
+  .set-row .set-idx{
+    width:22px; font-family:'Oswald'; color: var(--chalk-dim); font-size:13px; flex-shrink:0;
+  }
+  .set-row input{
+    flex:1; background: var(--surface-2); border:1px solid var(--line); border-radius:10px;
+    padding: 12px 10px; color: var(--chalk); font-family:'JetBrains Mono'; font-size:15px;
+    text-align:center; min-width:0;
+  }
+  .set-row input:focus{ outline:none; border-color: var(--steel); }
+  .set-row .x{ color: var(--chalk-dim); font-family:'JetBrains Mono'; font-size:13px; flex-shrink:0; }
+  .set-row .rm{ background:none; border:none; color: var(--rust); font-size:18px; cursor:pointer; flex-shrink:0; padding:4px 6px; }
+  .add-set{
+    background:none; border: 1px dashed var(--line); color: var(--chalk-dim);
+    border-radius:10px; padding:9px; width:100%; font-size:13px; cursor:pointer; font-family:'Inter';
+  }
+
+  /* Config */
+  .day-config-item{
+    background: var(--surface); border:1px solid var(--line); border-radius: var(--radius);
+    padding:14px; margin-bottom:10px;
+  }
+  .day-config-item .row1{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .day-config-item input.dayname{
+    background:transparent; border:none; color:var(--chalk); font-family:'Oswald';
+    font-size:17px; font-weight:600; text-transform:uppercase; padding:0; width:70%;
+  }
+  .day-config-item input.dayname:focus{ outline:none; }
+  .exercise-tag{
+    display:flex; justify-content:space-between; align-items:center;
+    background: var(--surface-2); border-radius:8px; padding:9px 10px; margin-bottom:6px; font-size:13px;
+  }
+  .exercise-tag .rm{ background:none; border:none; color: var(--rust); font-size:16px; cursor:pointer; }
+  .add-exercise-row{ display:flex; gap:6px; margin-top:8px; }
+  .add-exercise-row input{
+    flex:1; background: var(--surface-2); border:1px solid var(--line); border-radius:8px;
+    padding:9px 10px; color:var(--chalk); font-size:13px;
+  }
+  .add-exercise-row input:focus{ outline:none; border-color: var(--steel); }
+  .add-exercise-row button{
+    background: var(--steel-dim); border:none; color: var(--chalk); border-radius:8px; padding: 0 14px; cursor:pointer;
+  }
+
+  /* History */
+  .hist-session{
+    background: var(--surface); border:1px solid var(--line); border-radius: var(--radius);
+    padding:14px; margin-bottom:10px;
+  }
+  .hist-session .row1{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+  .hist-session .dayname{ font-family:'Oswald'; font-size:15px; font-weight:600; }
+  .hist-session .date{ font-size:11px; color: var(--chalk-dim); font-family:'JetBrains Mono'; }
+  .hist-session .ex-line{ font-size:12.5px; margin-bottom:4px; }
+  .hist-session .ex-line b{ color: var(--chalk); font-weight:600; }
+  .hist-session .ex-line span{ color: var(--chalk-dim); font-family:'JetBrains Mono'; }
+  .hist-session .del{
+    background:none; border:none; color: var(--rust); font-size:12px; cursor:pointer; margin-top:6px;
+    text-transform:uppercase; letter-spacing:.04em; font-family:'Oswald';
+  }
+
+  .toast{
+    position:fixed; bottom:90px; left:50%; transform:translateX(-50%);
+    background: var(--green); color:#0E1416; padding: 10px 20px; border-radius: 30px;
+    font-family:'Oswald'; font-size:13px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
+    opacity:0; pointer-events:none; transition: opacity .2s, transform .2s; z-index:30;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-6px); }
+
+  /* Calendar */
+  .cal-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .cal-header .navbtn2{
+    width:36px;height:36px;border-radius:50%;background:var(--surface);
+    border:1px solid var(--line); color:var(--chalk); font-size:16px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .cal-header .monthlabel{ font-family:'Oswald'; font-size:17px; font-weight:600; text-transform:uppercase; }
+  .cal-legend{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px; font-size:11px; color:var(--chalk-dim); }
+  .cal-legend span{ display:inline-flex; align-items:center; gap:5px; }
+  .cal-legend i{ width:9px;height:9px;border-radius:50%; display:inline-block; }
+  .cal-grid{ display:grid; grid-template-columns: repeat(7, 1fr); gap:6px; }
+  .cal-wd{ text-align:center; font-size:10px; color:var(--chalk-dim); font-family:'Oswald'; letter-spacing:.04em; padding-bottom:4px; }
+  .cal-cell{
+    aspect-ratio: 1; border-radius:10px; background: var(--surface);
+    border:1px solid var(--line); display:flex; flex-direction:column; align-items:center; justify-content:center;
+    cursor:pointer; position:relative; gap:2px;
+  }
+  .cal-cell.empty{ background:transparent; border:none; cursor:default; }
+  .cal-cell .dnum{ font-family:'JetBrains Mono'; font-size:12px; color:var(--chalk); }
+  .cal-cell .mark{ font-size:11px; line-height:1; }
+  .cal-cell.today{ border-color: var(--steel); border-width:2px; }
+  .cal-cell.completed{ background: rgba(107,155,110,0.16); border-color: var(--green); }
+  .cal-cell.missed{ background: rgba(181,83,60,0.14); border-color: var(--rust); }
+  .cal-cell.extra{ background: rgba(91,143,163,0.14); border-color: var(--steel); }
+  .cal-cell.future{ opacity:0.75; border-style:dashed; }
+  .cal-cell.rest .dnum{ color: var(--chalk-dim); }
+  .cal-daydetail{ font-size:13px; line-height:1.6; }
+  .cal-daydetail b{ display:block; margin-bottom:4px; font-family:'Oswald'; text-transform:uppercase; font-size:14px; }
+  .schedule-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+  .schedule-row label{ font-size:13px; color: var(--chalk-dim); width:90px; flex-shrink:0; }
+  .schedule-row select{
+    flex:1; background: var(--surface-2); border:1px solid var(--line); border-radius:8px;
+    padding:9px 8px; color: var(--chalk); font-size:13px;
+  }
+
+  .modal-bg{
+    position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-end; z-index:40;
+  }
+  .modal-bg.show{ display:flex; }
+  .modal{
+    background: var(--surface); width:100%; max-width:480px; margin:0 auto;
+    border-radius: 18px 18px 0 0; padding: 20px; border-top:1px solid var(--line);
+  }
+  .modal h3{ font-size:17px; margin-bottom:14px; }
+  .modal input{
+    width:100%; background: var(--surface-2); border:1px solid var(--line); border-radius:10px;
+    padding:13px; color:var(--chalk); font-size:15px; margin-bottom:12px;
+  }
+  .modal input:focus{ outline:none; border-color: var(--steel); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar" id="topbar">
+    <div class="back" id="backBtn" style="display:none;">&#8592;</div>
+    <div>
+      <h1 id="screenTitle">Meus Treinos</h1>
+      <div class="sub" id="screenSub"></div>
+    </div>
+  </header>
+
+  <main>
+    <!-- HOME -->
+    <section class="screen active" id="screen-home"></section>
+
+    <!-- LOG -->
+    <section class="screen" id="screen-log"></section>
+
+    <!-- HISTORY -->
+    <section class="screen" id="screen-history"></section>
+
+    <!-- CALENDAR -->
+    <section class="screen" id="screen-calendar"></section>
+
+    <!-- CONFIG -->
+    <section class="screen" id="screen-config"></section>
+  </main>
+
+  <nav class="bottomnav">
+    <div class="navbtn active" data-nav="home"><span class="ic">&#8962;</span>Início</div>
+    <div class="navbtn" data-nav="calendar"><span class="ic">&#128197;</span>Calendário</div>
+    <div class="navbtn" data-nav="history"><span class="ic">&#128336;</span>Histórico</div>
+    <div class="navbtn" data-nav="config"><span class="ic">&#9881;</span>Config</div>
+  </nav>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="modal-bg" id="modalBg">
+    <div class="modal" id="modalContent"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const STORE_KEY = "workoutTrackerData_v1";
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+
+  function load(){
+    let d;
+    try{
+      const raw = localStorage.getItem(STORE_KEY);
+      d = raw ? JSON.parse(raw) : { days: [], sessions: [] };
+    }catch(e){ d = { days: [], sessions: [] }; }
+    if(!d.schedule) d.schedule = [null,null,null,null,null,null,null]; // dom..sab
+    return d;
+  }
+  function save(){ localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
+
+  let data = load();
+  let currentNav = "home";
+  let logState = null; // { dayId, entries: [{exerciseId, sets:[{weight,reps}]}] }
+  let calState = { year: new Date().getFullYear(), month: new Date().getMonth() };
+  const WEEKDAY_NAMES = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+  const WEEKDAY_SHORT = ['D','S','T','Q','Q','S','S'];
+  const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  const $ = sel => document.querySelector(sel);
+  const el = (tag, cls, html) => { const e = document.createElement(tag); if(cls) e.className = cls; if(html!==undefined) e.innerHTML = html; return e; };
+
+  function daysSince(dateIso){
+    const d1 = new Date(dateIso); const d2 = new Date();
+    d1.setHours(0,0,0,0); d2.setHours(0,0,0,0);
+    return Math.round((d2 - d1) / 86400000);
+  }
+  function fmtDate(dateIso){
+    const d = new Date(dateIso);
+    return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' });
+  }
+  function lastSessionForDay(dayId){
+    const sess = data.sessions.filter(s => s.dayId === dayId).sort((a,b)=> new Date(b.date)-new Date(a.date));
+    return sess[0] || null;
+  }
+  function isoDateOnly(d){
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  function sessionsOnDate(dateObj){
+    const target = isoDateOnly(dateObj);
+    return data.sessions.filter(s => isoDateOnly(new Date(s.date)) === target);
+  }
+  function lastEntryForExercise(exerciseId, beforeSessionId){
+    const sess = data.sessions
+      .filter(s => s.entries.some(e => e.exerciseId === exerciseId))
+      .sort((a,b)=> new Date(b.date)-new Date(a.date));
+    for(const s of sess){
+      const entry = s.entries.find(e => e.exerciseId === exerciseId);
+      if(entry) return { session: s, entry };
+    }
+    return null;
+  }
+
+  function toast(msg){
+    const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+    setTimeout(()=> t.classList.remove('show'), 1600);
+  }
+
+  function showModal(html, onMount){
+    $('#modalContent').innerHTML = html;
+    $('#modalBg').classList.add('show');
+    if(onMount) onMount($('#modalContent'));
+  }
+  function closeModal(){ $('#modalBg').classList.remove('show'); }
+  $('#modalBg').addEventListener('click', e => { if(e.target.id === 'modalBg') closeModal(); });
+
+  // ---------- NAV ----------
+  function setNav(name, opts){
+    opts = opts || {};
+    currentNav = name;
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.navbtn').forEach(b => b.classList.remove('active'));
+    $('#backBtn').style.display = opts.back ? 'flex' : 'none';
+
+    if(name === 'log'){
+      $('#screen-log').classList.add('active');
+      $('#screenTitle').textContent = opts.title || 'Registrar treino';
+      $('#screenSub').textContent = opts.sub || '';
+      renderLog();
+    } else {
+      document.querySelector(`.navbtn[data-nav="${name}"]`).classList.add('active');
+      $(`#screen-${name}`).classList.add('active');
+      if(name==='home'){ $('#screenTitle').textContent='Meus Treinos'; $('#screenSub').textContent=''; renderHome(); }
+      if(name==='history'){ $('#screenTitle').textContent='Histórico'; $('#screenSub').textContent=''; renderHistory(); }
+      if(name==='calendar'){ $('#screenTitle').textContent='Calendário'; $('#screenSub').textContent=''; renderCalendar(); }
+      if(name==='config'){ $('#screenTitle').textContent='Configurar Treinos'; $('#screenSub').textContent=''; renderConfig(); }
+    }
+  }
+  document.querySelectorAll('.navbtn').forEach(btn => {
+    btn.addEventListener('click', () => setNav(btn.dataset.nav));
+  });
+  $('#backBtn').addEventListener('click', () => setNav(currentNav === 'log' ? 'home' : currentNav));
+
+  // ---------- HOME ----------
+  function renderHome(){
+    const root = $('#screen-home');
+    root.innerHTML = '';
+    if(data.days.length === 0){
+      root.appendChild(el('div','empty', `
+        <div class="display">Nenhum treino configurado</div>
+        <p>Crie seus dias de treino (ex: Treino A — Peito/Tríceps) e adicione os exercícios de cada um pra começar a registrar.</p>
+      `));
+      const btn = el('button','primary','Configurar meus treinos');
+      btn.onclick = () => setNav('config');
+      root.querySelector('.empty').appendChild(btn);
+      return;
+    }
+
+    const list = data.days.map(day => {
+      const last = lastSessionForDay(day.id);
+      const ds = last ? daysSince(last.date) : null;
+      return { day, ds };
+    }).sort((a,b) => {
+      if(a.ds === null) return -1;
+      if(b.ds === null) return 1;
+      return b.ds - a.ds;
+    });
+
+    list.forEach(({day, ds}) => {
+      const card = el('div','day-card');
+      if(ds === null) card.classList.add('overdue');
+      else if(ds >= 7) card.classList.add('hot');
+      else if(ds >= 4) card.classList.add('overdue');
+      else card.classList.add('fresh');
+
+      const exNames = day.exercises.map(e=>e.name).join(', ') || 'Sem exercícios ainda';
+      card.innerHTML = `
+        <div>
+          <div class="name">${day.name}</div>
+          <div class="exlist">${exNames}</div>
+        </div>
+        <div class="days-since">
+          <div class="days-num">${ds === null ? '—' : ds}</div>
+          <div class="days-label">${ds === null ? 'nunca feito' : (ds===0? 'hoje': ds===1 ? 'dia atrás' : 'dias atrás')}</div>
+        </div>
+      `;
+      card.onclick = () => startLog(day.id);
+      root.appendChild(card);
+    });
+  }
+
+  // ---------- LOG ----------
+  function startLog(dayId){
+    const day = data.days.find(d => d.id === dayId);
+    if(!day) return;
+    logState = {
+      dayId,
+      entries: day.exercises.map(ex => ({ exerciseId: ex.id, sets: [{weight:'', reps:''}] }))
+    };
+    setNav('log', { back:true, title: day.name, sub: 'Registrar sessão de hoje' });
+  }
+
+  function renderLog(){
+    const root = $('#screen-log');
+    root.innerHTML = '';
+    if(!logState){ root.innerHTML = '<div class="empty"><p>Selecione um treino na tela inicial.</p></div>'; return; }
+    const day = data.days.find(d => d.id === logState.dayId);
+    if(!day) return;
+
+    day.exercises.forEach(ex => {
+      const entry = logState.entries.find(e => e.exerciseId === ex.id);
+      const block = el('div','exercise-block');
+      const prevInfo = lastEntryForExercise(ex.id);
+      let prevText = 'Primeira vez fazendo este exercício';
+      if(prevInfo){
+        const setsTxt = prevInfo.entry.sets.map(s => `${s.weight||'-'}kg×${s.reps||'-'}`).join(', ');
+        prevText = `Última vez (${fmtDate(prevInfo.session.date)}): ${setsTxt}`;
+      }
+      block.innerHTML = `<h3>${ex.name}</h3><div class="prev-ref">${prevText}</div>`;
+
+      const setsWrap = el('div','sets-wrap');
+      block.appendChild(setsWrap);
+
+      function renderSets(){
+        setsWrap.innerHTML = '';
+        entry.sets.forEach((set, idx) => {
+          const row = el('div','set-row');
+          row.innerHTML = `
+            <div class="set-idx">${idx+1}</div>
+            <input type="number" inputmode="decimal" placeholder="kg" value="${set.weight}">
+            <div class="x">×</div>
+            <input type="number" inputmode="numeric" placeholder="reps" value="${set.reps}">
+            <button class="rm">&times;</button>
+          `;
+          const [wIn, rIn] = row.querySelectorAll('input');
+          wIn.oninput = () => set.weight = wIn.value;
+          rIn.oninput = () => set.reps = rIn.value;
+          row.querySelector('.rm').onclick = () => {
+            entry.sets.splice(idx,1);
+            if(entry.sets.length===0) entry.sets.push({weight:'',reps:''});
+            renderSets();
+          };
+          setsWrap.appendChild(row);
+        });
+      }
+      renderSets();
+
+      const addBtn = el('button','add-set','+ adicionar série');
+      addBtn.onclick = () => {
+        const lastSet = entry.sets[entry.sets.length-1];
+        entry.sets.push({ weight: lastSet ? lastSet.weight : '', reps: '' });
+        renderSets();
+      };
+      block.appendChild(addBtn);
+      root.appendChild(block);
+    });
+
+    const saveBtn = el('button','primary','Salvar treino de hoje');
+    saveBtn.style.marginTop = '8px';
+    saveBtn.onclick = saveLog;
+    root.appendChild(saveBtn);
+  }
+
+  function saveLog(){
+    if(!logState) return;
+    const cleanEntries = logState.entries
+      .map(e => ({ exerciseId: e.exerciseId, sets: e.sets.filter(s => s.weight !== '' || s.reps !== '') }))
+      .filter(e => e.sets.length > 0);
+    if(cleanEntries.length === 0){ toast('Preencha ao menos uma série'); return; }
+    data.sessions.push({ id: uid(), dayId: logState.dayId, date: new Date().toISOString(), entries: cleanEntries });
+    save();
+    toast('Treino salvo ✓');
+    logState = null;
+    setNav('home');
+  }
+
+  // ---------- HISTORY ----------
+  function renderHistory(){
+    const root = $('#screen-history');
+    root.innerHTML = '';
+    const sessions = [...data.sessions].sort((a,b)=> new Date(b.date)-new Date(a.date));
+    if(sessions.length===0){
+      root.appendChild(el('div','empty', `<div class="display">Sem histórico ainda</div><p>Suas sessões de treino salvas vão aparecer aqui.</p>`));
+      return;
+    }
+    sessions.forEach(sess => {
+      const day = data.days.find(d => d.id === sess.dayId);
+      const card = el('div','hist-session');
+      const exLines = sess.entries.map(entry => {
+        const ex = day ? day.exercises.find(e => e.id === entry.exerciseId) : null;
+        const name = ex ? ex.name : '(exercício removido)';
+        const setsTxt = entry.sets.map(s => `${s.weight||'-'}kg×${s.reps||'-'}`).join(', ');
+        return `<div class="ex-line"><b>${name}:</b> <span>${setsTxt}</span></div>`;
+      }).join('');
+      card.innerHTML = `
+        <div class="row1"><div class="dayname">${day ? day.name : '(treino removido)'}</div><div class="date">${fmtDate(sess.date)}</div></div>
+        ${exLines}
+      `;
+      const delBtn = el('button','del','Excluir sessão');
+      delBtn.onclick = () => {
+        data.sessions = data.sessions.filter(s => s.id !== sess.id);
+        save(); renderHistory();
+        toast('Sessão excluída');
+      };
+      card.appendChild(delBtn);
+      root.appendChild(card);
+    });
+  }
+
+  // ---------- CALENDAR ----------
+  function renderCalendar(){
+    const root = $('#screen-calendar');
+    root.innerHTML = '';
+
+    const header = el('div','cal-header');
+    const prevBtn = el('button','navbtn2','&#8592;');
+    const nextBtn = el('button','navbtn2','&#8594;');
+    const label = el('div','monthlabel', `${MONTH_NAMES[calState.month]} ${calState.year}`);
+    prevBtn.onclick = () => { calState.month--; if(calState.month<0){calState.month=11; calState.year--;} renderCalendar(); };
+    nextBtn.onclick = () => { calState.month++; if(calState.month>11){calState.month=0; calState.year++;} renderCalendar(); };
+    header.appendChild(prevBtn); header.appendChild(label); header.appendChild(nextBtn);
+    root.appendChild(header);
+
+    const hasSchedule = data.schedule.some(v => v);
+    const legend = el('div','cal-legend', `
+      <span><i style="background:var(--green)"></i>Concluído</span>
+      ${hasSchedule ? '<span><i style="background:var(--rust)"></i>Faltou</span>' : ''}
+      <span><i style="background:var(--steel)"></i>Extra</span>
+      <span><i style="background:var(--line)"></i>Planejado</span>
+    `);
+    root.appendChild(legend);
+
+    const grid = el('div','cal-grid');
+    WEEKDAY_SHORT.forEach(w => grid.appendChild(el('div','cal-wd', w)));
+
+    const firstDay = new Date(calState.year, calState.month, 1);
+    const startOffset = firstDay.getDay();
+    const daysInMonth = new Date(calState.year, calState.month+1, 0).getDate();
+    const today = new Date(); today.setHours(0,0,0,0);
+
+    for(let i=0;i<startOffset;i++) grid.appendChild(el('div','cal-cell empty'));
+
+    for(let d=1; d<=daysInMonth; d++){
+      const dateObj = new Date(calState.year, calState.month, d);
+      dateObj.setHours(0,0,0,0);
+      const weekday = dateObj.getDay();
+      const scheduledDayId = hasSchedule ? data.schedule[weekday] : null;
+      const scheduledDay = scheduledDayId ? data.days.find(dd => dd.id === scheduledDayId) : null;
+      const sessions = sessionsOnDate(dateObj);
+      const isToday = dateObj.getTime() === today.getTime();
+      const isFuture = dateObj.getTime() > today.getTime();
+
+      const cell = el('div','cal-cell');
+      if(isToday) cell.classList.add('today');
+
+      let mark = '';
+      if(isFuture){
+        cell.classList.add('future');
+        if(scheduledDay){ mark = '&middot;'; } else if(hasSchedule){ cell.classList.add('rest'); }
+      } else {
+        if(sessions.length > 0){
+          const matchesPlan = scheduledDayId && sessions.some(s => s.dayId === scheduledDayId);
+          cell.classList.add(matchesPlan || !hasSchedule ? 'completed' : 'extra');
+          mark = '&#10003;';
+        } else if(scheduledDay){
+          cell.classList.add('missed');
+          mark = '&#10007;';
+        } else if(hasSchedule){
+          cell.classList.add('rest');
+        }
+      }
+
+      cell.innerHTML = `<div class="dnum">${d}</div><div class="mark">${mark}</div>`;
+      cell.onclick = () => openDayDetail(dateObj, scheduledDay, sessions, isFuture);
+      grid.appendChild(cell);
+    }
+    root.appendChild(grid);
+
+    if(!hasSchedule){
+      const hint = el('div','card', `<p style="margin:0;font-size:13px;color:var(--chalk-dim);">Dica: defina sua <b style="color:var(--chalk)">agenda semanal</b> em Config para o calendário também marcar os dias que você faltou, não só os concluídos.</p>`);
+      hint.style.marginTop = '14px';
+      root.appendChild(hint);
+    }
+  }
+
+  function openDayDetail(dateObj, scheduledDay, sessions, isFuture){
+    const dateLabel = dateObj.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
+    let body = '';
+    if(sessions.length > 0){
+      body += sessions.map(sess => {
+        const day = data.days.find(d => d.id === sess.dayId);
+        const lines = sess.entries.map(entry => {
+          const ex = day ? day.exercises.find(e => e.id === entry.exerciseId) : null;
+          const setsTxt = entry.sets.map(s => `${s.weight||'-'}kg×${s.reps||'-'}`).join(', ');
+          return `${ex ? ex.name : '(exercício removido)'}: ${setsTxt}`;
+        }).join('<br>');
+        return `<div class="cal-daydetail"><b style="color:var(--green)">&#10003; ${day ? day.name : '(treino removido)'}</b>${lines}</div>`;
+      }).join('<hr style="border-color:var(--line);margin:12px 0;">');
+    } else if(isFuture && scheduledDay){
+      body = `<div class="cal-daydetail"><b>Planejado</b>${scheduledDay.name}</div>`;
+    } else if(isFuture){
+      body = `<div class="cal-daydetail"><b>Sem treino planejado</b>Dia de descanso</div>`;
+    } else if(scheduledDay){
+      body = `<div class="cal-daydetail"><b style="color:var(--rust)">&#10007; Faltou</b>Estava planejado: ${scheduledDay.name}</div>`;
+    } else {
+      body = `<div class="cal-daydetail"><b>Sem registro</b>Nenhum treino planejado ou feito neste dia</div>`;
+    }
+    showModal(`<h3>${dateLabel}</h3>${body}`);
+  }
+
+  // ---------- CONFIG ----------
+  function renderConfig(){
+    const root = $('#screen-config');
+    root.innerHTML = '';
+
+    data.days.forEach(day => {
+      const item = el('div','day-config-item');
+      const row1 = el('div','row1');
+      const nameInput = el('input','dayname');
+      nameInput.value = day.name;
+      nameInput.oninput = () => { day.name = nameInput.value; save(); };
+      row1.appendChild(nameInput);
+      const delDayBtn = el('button','icon-btn','&times;');
+      delDayBtn.onclick = () => {
+        if(confirm(`Excluir "${day.name}" e todo o histórico associado a ele?`)){
+          data.days = data.days.filter(d => d.id !== day.id);
+          data.sessions = data.sessions.filter(s => s.dayId !== day.id);
+          save(); renderConfig(); renderHome();
+        }
+      };
+      row1.appendChild(delDayBtn);
+      item.appendChild(row1);
+
+      day.exercises.forEach(ex => {
+        const tag = el('div','exercise-tag');
+        tag.innerHTML = `<span>${ex.name}</span>`;
+        const rm = el('button','rm','&times;');
+        rm.onclick = () => {
+          day.exercises = day.exercises.filter(e => e.id !== ex.id);
+          save(); renderConfig();
+        };
+        tag.appendChild(rm);
+        item.appendChild(tag);
+      });
+
+      const addRow = el('div','add-exercise-row');
+      addRow.innerHTML = `<input type="text" placeholder="Nome do exercício"><button>+</button>`;
+      const input = addRow.querySelector('input');
+      const addFn = () => {
+        const v = input.value.trim();
+        if(!v) return;
+        day.exercises.push({ id: uid(), name: v });
+        save(); renderConfig();
+      };
+      addRow.querySelector('button').onclick = addFn;
+      input.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); addFn(); }});
+      item.appendChild(addRow);
+
+      root.appendChild(item);
+    });
+
+    const addDayBtn = el('button','primary','+ Novo dia de treino');
+    addDayBtn.style.marginTop = '4px';
+    addDayBtn.onclick = () => {
+      showModal(`
+        <h3>Novo dia de treino</h3>
+        <input type="text" id="newDayName" placeholder="Ex: Treino A — Peito/Tríceps">
+        <button class="primary" id="confirmNewDay">Criar</button>
+      `, (m) => {
+        m.querySelector('#newDayName').focus();
+        m.querySelector('#confirmNewDay').onclick = () => {
+          const v = m.querySelector('#newDayName').value.trim();
+          if(!v) return;
+          data.days.push({ id: uid(), name: v, exercises: [] });
+          save(); closeModal(); renderConfig();
+        };
+      });
+    };
+    root.appendChild(addDayBtn);
+
+    if(data.days.length > 0){
+      const schedCard = el('div','card');
+      schedCard.innerHTML = `<h3 style="font-size:15px;margin-bottom:4px;">Agenda semanal</h3>
+        <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 12px;">Opcional. Define o que é planejado em cada dia, pra o calendário mostrar quando você faltou.</p>`;
+      WEEKDAY_NAMES.forEach((wname, idx) => {
+        const row = el('div','schedule-row');
+        const sel = el('select');
+        sel.innerHTML = `<option value="">Descanso</option>` + data.days.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+        sel.value = data.schedule[idx] || '';
+        sel.onchange = () => { data.schedule[idx] = sel.value || null; save(); };
+        row.appendChild(el('label',null,wname));
+        row.appendChild(sel);
+        schedCard.appendChild(row);
+      });
+      root.appendChild(schedCard);
+
+      const exportBtn = el('button','ghost','Exportar backup (copiar dados)');
+      exportBtn.onclick = () => {
+        const str = JSON.stringify(data);
+        navigator.clipboard?.writeText(str).then(()=> toast('Backup copiado ✓')).catch(()=>{
+          prompt('Copie manualmente:', str);
+        });
+      };
+      root.appendChild(exportBtn);
+
+      const wipeBtn = el('button','ghost danger','Apagar todos os dados');
+      wipeBtn.onclick = () => {
+        if(confirm('Isso vai apagar todos os treinos e histórico permanentemente. Continuar?')){
+          data = { days: [], sessions: [] };
+          save(); renderConfig(); renderHome();
+          toast('Dados apagados');
+        }
+      };
+      root.appendChild(wipeBtn);
+    }
+  }
+
+  // init
+  setNav('home');
+
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    });
+  }
+})();
+</script>
+</body>
+</html>
