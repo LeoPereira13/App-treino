@@ -306,6 +306,7 @@
 (function(){
   "use strict";
   const STORE_KEY = "workoutTrackerData_v1";
+  const DRAFT_KEY = "workoutTrackerDraft_v1";
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
 
   function load(){
@@ -343,6 +344,19 @@
     const sess = data.sessions.filter(s => s.dayId === dayId).sort((a,b)=> new Date(b.date)-new Date(a.date));
     return sess[0] || null;
   }
+  function saveDraft(){
+    if(logState) localStorage.setItem(DRAFT_KEY, JSON.stringify(logState));
+  }
+  function clearDraft(){
+    localStorage.removeItem(DRAFT_KEY);
+  }
+  function loadDraft(){
+    try{
+      const raw = localStorage.getItem(DRAFT_KEY);
+      return raw ? JSON.parse(raw) : null;
+    }catch(e){ return null; }
+  }
+
   function isoDateOnly(d){
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
@@ -453,10 +467,15 @@
   function startLog(dayId){
     const day = data.days.find(d => d.id === dayId);
     if(!day) return;
-    logState = {
-      dayId,
-      entries: day.exercises.map(ex => ({ exerciseId: ex.id, sets: [{weight:'', reps:''}] }))
-    };
+    if(logState && logState.dayId === dayId){
+      // já existe um rascunho em andamento pra esse mesmo treino, continua ele
+    } else {
+      logState = {
+        dayId,
+        entries: day.exercises.map(ex => ({ exerciseId: ex.id, sets: [{weight:'', reps:''}] }))
+      };
+      saveDraft();
+    }
     setNav('log', { back:true, title: day.name, sub: 'Registrar sessão de hoje' });
   }
 
@@ -493,12 +512,13 @@
             <button class="rm">&times;</button>
           `;
           const [wIn, rIn] = row.querySelectorAll('input');
-          wIn.oninput = () => set.weight = wIn.value;
-          rIn.oninput = () => set.reps = rIn.value;
+          wIn.oninput = () => { set.weight = wIn.value; saveDraft(); };
+          rIn.oninput = () => { set.reps = rIn.value; saveDraft(); };
           row.querySelector('.rm').onclick = () => {
             entry.sets.splice(idx,1);
             if(entry.sets.length===0) entry.sets.push({weight:'',reps:''});
             renderSets();
+            saveDraft();
           };
           setsWrap.appendChild(row);
         });
@@ -510,6 +530,7 @@
         const lastSet = entry.sets[entry.sets.length-1];
         entry.sets.push({ weight: lastSet ? lastSet.weight : '', reps: '' });
         renderSets();
+        saveDraft();
       };
       block.appendChild(addBtn);
       root.appendChild(block);
@@ -519,6 +540,16 @@
     saveBtn.style.marginTop = '8px';
     saveBtn.onclick = saveLog;
     root.appendChild(saveBtn);
+
+    const discardBtn = el('button','ghost danger','Descartar rascunho');
+    discardBtn.onclick = () => {
+      if(confirm('Descartar tudo que foi preenchido nesta sessão?')){
+        clearDraft();
+        logState = null;
+        setNav('home');
+      }
+    };
+    root.appendChild(discardBtn);
   }
 
   function saveLog(){
@@ -529,6 +560,7 @@
     if(cleanEntries.length === 0){ toast('Preencha ao menos uma série'); return; }
     data.sessions.push({ id: uid(), dayId: logState.dayId, date: new Date().toISOString(), entries: cleanEntries });
     save();
+    clearDraft();
     toast('Treino salvo ✓');
     logState = null;
     setNav('home');
@@ -693,7 +725,13 @@
 
       day.exercises.forEach(ex => {
         const tag = el('div','exercise-tag');
-        tag.innerHTML = `<span>${ex.name}</span>`;
+        const nameInput = el('input','ex-name-input');
+        nameInput.type = 'text';
+        nameInput.value = ex.name;
+        nameInput.style.cssText = 'flex:1;background:transparent;border:none;color:var(--chalk);font-size:13px;padding:0;';
+        nameInput.oninput = () => { ex.name = nameInput.value; };
+        nameInput.onblur = () => { if(ex.name.trim()==='') ex.name = 'Exercício'; save(); };
+        tag.appendChild(nameInput);
         const rm = el('button','rm','&times;');
         rm.onclick = () => {
           day.exercises = day.exercises.filter(e => e.id !== ex.id);
@@ -776,7 +814,18 @@
   }
 
   // init
-  setNav('home');
+  (function initApp(){
+    const draft = loadDraft();
+    if(draft && data.days.some(d => d.id === draft.dayId)){
+      logState = draft;
+      const day = data.days.find(d => d.id === draft.dayId);
+      setNav('log', { back:true, title: day.name, sub: 'Continuando sessão em andamento' });
+      toast('Rascunho restaurado');
+    } else {
+      if(draft) clearDraft();
+      setNav('home');
+    }
+  })();
 
   if('serviceWorker' in navigator){
     window.addEventListener('load', () => {
