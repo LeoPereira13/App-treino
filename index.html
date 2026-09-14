@@ -244,6 +244,24 @@
     padding:9px 8px; color: var(--chalk); font-size:13px;
   }
 
+  .rest-bar{
+    position: fixed; left:0; right:0; bottom: calc(66px + env(safe-area-inset-bottom));
+    max-width: 480px; margin: 0 auto;
+    background: var(--steel-dim); border-top: 1px solid var(--steel);
+    display:none; align-items:center; justify-content:space-between;
+    padding: 12px 16px; z-index: 19; box-shadow: 0 -2px 12px rgba(0,0,0,0.3);
+  }
+  .rest-bar.show{ display:flex; }
+  .rest-bar.ending{ background: var(--rust); border-color: var(--rust); }
+  .rest-bar .rt-time{ font-family:'JetBrains Mono'; font-size:22px; font-weight:700; color: var(--chalk); }
+  .rest-bar .rt-label{ font-size:10px; color: rgba(237,234,227,0.7); text-transform:uppercase; letter-spacing:.06em; }
+  .rest-bar .rt-actions{ display:flex; gap:6px; }
+  .rest-bar .rt-btn{
+    background: rgba(255,255,255,0.12); border:none; color: var(--chalk); border-radius:8px;
+    padding: 8px 10px; font-size:12px; cursor:pointer; font-family:'Oswald'; text-transform:uppercase;
+  }
+  .rest-bar .rt-skip{ background: rgba(255,255,255,0.22); }
+
   .modal-bg{
     position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-end; z-index:40;
   }
@@ -268,6 +286,7 @@
     <div>
       <h1 id="screenTitle">Meus Treinos</h1>
       <div class="sub" id="screenSub"></div>
+      <div class="mono" id="workoutTimerDisplay" style="display:none;font-size:14px;color:var(--steel);margin-top:2px;font-weight:600;"></div>
     </div>
   </header>
 
@@ -297,6 +316,8 @@
 
   <div class="toast" id="toast"></div>
 
+  <div class="rest-bar" id="restTimerBar"></div>
+
   <div class="modal-bg" id="modalBg">
     <div class="modal" id="modalContent"></div>
   </div>
@@ -316,6 +337,9 @@
       d = raw ? JSON.parse(raw) : { days: [], sessions: [] };
     }catch(e){ d = { days: [], sessions: [] }; }
     if(!d.schedule) d.schedule = [null,null,null,null,null,null,null]; // dom..sab
+    if(!d.scheduleMode) d.scheduleMode = 'weekday'; // 'weekday' | 'sequential'
+    if(!d.sequence) d.sequence = []; // array of dayId|null, in rotation order
+    if(!d.defaultRestSeconds) d.defaultRestSeconds = 90;
     return d;
   }
   function save(){ localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
@@ -330,6 +354,120 @@
 
   const $ = sel => document.querySelector(sel);
   const el = (tag, cls, html) => { const e = document.createElement(tag); if(cls) e.className = cls; if(html!==undefined) e.innerHTML = html; return e; };
+
+  // ---------- REST TIMER & WORKOUT DURATION ----------
+  const REST_KEY = "workoutTrackerRestTimer_v1";
+  let restTimer = { endTime: null, duration: 90, running: false };
+
+  function saveRestTimer(){ localStorage.setItem(REST_KEY, JSON.stringify(restTimer)); }
+  function clearRestTimerState(){ localStorage.removeItem(REST_KEY); }
+
+  function ensureNotificationPermission(){
+    if('Notification' in window && Notification.permission === 'default'){
+      Notification.requestPermission();
+    }
+  }
+
+  function startRestTimer(seconds){
+    ensureNotificationPermission();
+    restTimer = { endTime: Date.now() + seconds*1000, duration: seconds, running: true };
+    saveRestTimer();
+    renderRestBar();
+  }
+
+  function playBeep(){
+    try{
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new Ctx();
+      const now = ctx.currentTime;
+      [0, 0.5, 1.0].forEach(offset => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine'; osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.0001, now+offset);
+        gain.gain.exponentialRampToValueAtTime(0.35, now+offset+0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now+offset+0.42);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(now+offset); osc.stop(now+offset+0.45);
+      });
+    }catch(e){}
+  }
+
+  function showEndNotification(){
+    if(!('Notification' in window) || Notification.permission !== 'granted') return;
+    const opts = { body: 'Hora da próxima série 💪', icon: './icon-192.png', vibrate: [700,200,700,200,700], tag: 'rest-timer', renotify: true };
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.getRegistration().then(reg => {
+        if(reg) reg.showNotification('Descanso acabou ⏱', opts);
+        else { try{ new Notification('Descanso acabou ⏱', opts); }catch(e){} }
+      }).catch(()=>{ try{ new Notification('Descanso acabou ⏱', opts); }catch(e){} });
+    } else {
+      try{ new Notification('Descanso acabou ⏱', opts); }catch(e){}
+    }
+  }
+
+  function onRestTimerEnd(){
+    restTimer.running = false;
+    clearRestTimerState();
+    if(navigator.vibrate) navigator.vibrate([700,200,700,200,700]);
+    playBeep();
+    showEndNotification();
+    toast('Descanso acabou! 💪');
+    renderRestBar();
+  }
+
+  function fmtClock(totalSeconds){
+    const s = Math.max(0, Math.round(totalSeconds));
+    const mm = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s%60).padStart(2,'0');
+    return `${mm}:${ss}`;
+  }
+
+  function renderRestBar(){
+    const bar = $('#restTimerBar');
+    if(!bar) return;
+    if(!restTimer.running){ bar.classList.remove('show'); return; }
+    const remain = (restTimer.endTime - Date.now())/1000;
+    bar.classList.toggle('ending', remain <= 5);
+    bar.innerHTML = `
+      <div><div class="rt-label">Descanso</div><div class="rt-time">${fmtClock(remain)}</div></div>
+      <div class="rt-actions">
+        <button class="rt-btn" id="rtMinus">-15s</button>
+        <button class="rt-btn" id="rtPlus">+15s</button>
+        <button class="rt-btn rt-skip" id="rtSkip">Pular</button>
+      </div>
+    `;
+    bar.classList.add('show');
+    bar.querySelector('#rtMinus').onclick = () => { restTimer.endTime -= 15000; saveRestTimer(); renderRestBar(); };
+    bar.querySelector('#rtPlus').onclick = () => { restTimer.endTime += 15000; saveRestTimer(); renderRestBar(); };
+    bar.querySelector('#rtSkip').onclick = () => { restTimer.running = false; clearRestTimerState(); renderRestBar(); };
+  }
+
+  function renderWorkoutTimer(){
+    const disp = $('#workoutTimerDisplay');
+    if(!disp) return;
+    if(currentNav === 'log' && logState && logState.startedAt){
+      const elapsed = (Date.now() - logState.startedAt)/1000;
+      disp.textContent = `⏱ ${fmtClock(elapsed)}`;
+      disp.style.display = 'block';
+    } else {
+      disp.style.display = 'none';
+    }
+  }
+
+  setInterval(() => {
+    if(restTimer.running){
+      if(Date.now() >= restTimer.endTime) onRestTimerEnd();
+      else renderRestBar();
+    }
+    renderWorkoutTimer();
+  }, 1000);
+
+  document.addEventListener('visibilitychange', () => {
+    if(!document.hidden && restTimer.running && Date.now() >= restTimer.endTime){
+      onRestTimerEnd();
+    }
+  });
 
   function daysSince(dateIso){
     const d1 = new Date(dateIso); const d2 = new Date();
@@ -355,6 +493,36 @@
       const raw = localStorage.getItem(DRAFT_KEY);
       return raw ? JSON.parse(raw) : null;
     }catch(e){ return null; }
+  }
+
+  function sameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+
+  // Retorna o dayId previsto pra uma data (ou null), dependendo do modo de agenda ativo.
+  // No modo semanal: fixo por dia da semana, vale pra qualquer data (passada ou futura).
+  // No modo sequência: só prevê hoje e datas futuras, calculado a partir da última sessão real.
+  function getScheduledDayId(dateObj){
+    const today = new Date(); today.setHours(0,0,0,0);
+    const d = new Date(dateObj); d.setHours(0,0,0,0);
+
+    if(data.scheduleMode === 'sequential'){
+      if(data.sequence.length === 0) return null;
+      if(d.getTime() < today.getTime()) return null; // não retroage no modo sequência
+      const lastSession = [...data.sessions].sort((a,b)=> new Date(b.date)-new Date(a.date))[0];
+      let startIdx = 0;
+      if(lastSession){
+        const pos = data.sequence.findIndex(id => id === lastSession.dayId);
+        startIdx = pos === -1 ? 0 : (pos + 1) % data.sequence.length;
+      }
+      const offsetDays = Math.round((d - today) / 86400000);
+      const idx = (startIdx + offsetDays) % data.sequence.length;
+      return data.sequence[idx];
+    } else {
+      return data.schedule[d.getDay()] || null;
+    }
+  }
+
+  function hasAnySchedule(){
+    return data.scheduleMode === 'sequential' ? data.sequence.length > 0 : data.schedule.some(v => v);
   }
 
   function isoDateOnly(d){
@@ -472,6 +640,7 @@
     } else {
       logState = {
         dayId,
+        startedAt: Date.now(),
         entries: day.exercises.map(ex => ({ exerciseId: ex.id, sets: [{weight:'', reps:''}] }))
       };
       saveDraft();
@@ -526,13 +695,24 @@
       renderSets();
 
       const addBtn = el('button','add-set','+ adicionar série');
+      addBtn.style.flex = '1';
       addBtn.onclick = () => {
         const lastSet = entry.sets[entry.sets.length-1];
         entry.sets.push({ weight: lastSet ? lastSet.weight : '', reps: '' });
         renderSets();
         saveDraft();
+        startRestTimer(data.defaultRestSeconds || 90);
       };
-      block.appendChild(addBtn);
+
+      const restBtn = el('button','add-set','⏱ Descanso');
+      restBtn.style.flex = '0 0 100px';
+      restBtn.onclick = () => startRestTimer(data.defaultRestSeconds || 90);
+
+      const actionsRow = el('div');
+      actionsRow.style.cssText = 'display:flex;gap:8px;';
+      actionsRow.appendChild(addBtn);
+      actionsRow.appendChild(restBtn);
+      block.appendChild(actionsRow);
       root.appendChild(block);
     });
 
@@ -613,7 +793,7 @@
     header.appendChild(prevBtn); header.appendChild(label); header.appendChild(nextBtn);
     root.appendChild(header);
 
-    const hasSchedule = data.schedule.some(v => v);
+    const hasSchedule = hasAnySchedule();
     const legend = el('div','cal-legend', `
       <span><i style="background:var(--green)"></i>Concluído</span>
       ${hasSchedule ? '<span><i style="background:var(--rust)"></i>Faltou</span>' : ''}
@@ -635,8 +815,7 @@
     for(let d=1; d<=daysInMonth; d++){
       const dateObj = new Date(calState.year, calState.month, d);
       dateObj.setHours(0,0,0,0);
-      const weekday = dateObj.getDay();
-      const scheduledDayId = hasSchedule ? data.schedule[weekday] : null;
+      const scheduledDayId = getScheduledDayId(dateObj);
       const scheduledDay = scheduledDayId ? data.days.find(dd => dd.id === scheduledDayId) : null;
       const sessions = sessionsOnDate(dateObj);
       const isToday = dateObj.getTime() === today.getTime();
@@ -663,19 +842,19 @@
       }
 
       cell.innerHTML = `<div class="dnum">${d}</div><div class="mark">${mark}</div>`;
-      cell.onclick = () => openDayDetail(dateObj, scheduledDay, sessions, isFuture);
+      cell.onclick = () => openDayDetail(dateObj, scheduledDay, sessions, isFuture, isToday);
       grid.appendChild(cell);
     }
     root.appendChild(grid);
 
     if(!hasSchedule){
-      const hint = el('div','card', `<p style="margin:0;font-size:13px;color:var(--chalk-dim);">Dica: defina sua <b style="color:var(--chalk)">agenda semanal</b> em Config para o calendário também marcar os dias que você faltou, não só os concluídos.</p>`);
+      const hint = el('div','card', `<p style="margin:0;font-size:13px;color:var(--chalk-dim);">Dica: defina sua <b style="color:var(--chalk)">agenda</b> em Config para o calendário também marcar os dias que você faltou, e liberar o botão de iniciar treino direto por aqui.</p>`);
       hint.style.marginTop = '14px';
       root.appendChild(hint);
     }
   }
 
-  function openDayDetail(dateObj, scheduledDay, sessions, isFuture){
+  function openDayDetail(dateObj, scheduledDay, sessions, isFuture, isToday){
     const dateLabel = dateObj.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long' });
     let body = '';
     if(sessions.length > 0){
@@ -697,7 +876,20 @@
     } else {
       body = `<div class="cal-daydetail"><b>Sem registro</b>Nenhum treino planejado ou feito neste dia</div>`;
     }
-    showModal(`<h3>${dateLabel}</h3>${body}`);
+
+    let footer = '';
+    if(isToday && scheduledDay && sessions.length === 0){
+      footer = `<button class="primary" id="playBtn" style="margin-top:14px;">&#9654; Iniciar treino: ${scheduledDay.name}</button>`;
+    } else if(isToday && sessions.length === 0){
+      footer = `<button class="ghost" id="playBtnFree" style="margin-top:14px;">Escolher um treino pra hoje</button>`;
+    }
+
+    showModal(`<h3>${dateLabel}</h3>${body}${footer}`, (m) => {
+      const pb = m.querySelector('#playBtn');
+      if(pb) pb.onclick = () => { closeModal(); startLog(scheduledDay.id); };
+      const pbf = m.querySelector('#playBtnFree');
+      if(pbf) pbf.onclick = () => { closeModal(); setNav('home'); };
+    });
   }
 
   // ---------- CONFIG ----------
@@ -717,6 +909,8 @@
         if(confirm(`Excluir "${day.name}" e todo o histórico associado a ele?`)){
           data.days = data.days.filter(d => d.id !== day.id);
           data.sessions = data.sessions.filter(s => s.dayId !== day.id);
+          data.schedule = data.schedule.map(id => id === day.id ? null : id);
+          data.sequence = data.sequence.filter(id => id !== day.id);
           save(); renderConfig(); renderHome();
         }
       };
@@ -778,19 +972,99 @@
 
     if(data.days.length > 0){
       const schedCard = el('div','card');
-      schedCard.innerHTML = `<h3 style="font-size:15px;margin-bottom:4px;">Agenda semanal</h3>
-        <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 12px;">Opcional. Define o que é planejado em cada dia, pra o calendário mostrar quando você faltou.</p>`;
-      WEEKDAY_NAMES.forEach((wname, idx) => {
-        const row = el('div','schedule-row');
-        const sel = el('select');
-        sel.innerHTML = `<option value="">Descanso</option>` + data.days.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
-        sel.value = data.schedule[idx] || '';
-        sel.onchange = () => { data.schedule[idx] = sel.value || null; save(); };
-        row.appendChild(el('label',null,wname));
-        row.appendChild(sel);
-        schedCard.appendChild(row);
+      schedCard.innerHTML = `<h3 style="font-size:15px;margin-bottom:4px;">Agenda</h3>
+        <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 12px;">Opcional. Define o que é planejado, pra o calendário mostrar quando você faltou e liberar o botão de iniciar treino.</p>`;
+
+      const modeToggle = el('div','mode-toggle');
+      modeToggle.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;';
+      const modes = [ ['weekday','Dias fixos'], ['sequential','Sequência rotativa'] ];
+      modes.forEach(([val,label]) => {
+        const b = el('button', null, label);
+        const active = data.scheduleMode === val;
+        b.style.cssText = `flex:1;padding:10px 6px;border-radius:10px;font-size:12px;cursor:pointer;font-family:'Oswald';text-transform:uppercase;letter-spacing:.03em;border:1px solid ${active?'var(--steel)':'var(--line)'};background:${active?'var(--steel-dim)':'var(--surface-2)'};color:var(--chalk);`;
+        b.onclick = () => { data.scheduleMode = val; save(); renderConfig(); };
+        modeToggle.appendChild(b);
       });
+      schedCard.appendChild(modeToggle);
+
+      if(data.scheduleMode === 'weekday'){
+        WEEKDAY_NAMES.forEach((wname, idx) => {
+          const row = el('div','schedule-row');
+          const sel = el('select');
+          sel.innerHTML = `<option value="">Descanso</option>` + data.days.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+          sel.value = data.schedule[idx] || '';
+          sel.onchange = () => { data.schedule[idx] = sel.value || null; save(); };
+          row.appendChild(el('label',null,wname));
+          row.appendChild(sel);
+          schedCard.appendChild(row);
+        });
+      } else {
+        const p = el('p'); p.style.cssText='font-size:12px;color:var(--chalk-dim);margin:0 0 10px;';
+        p.textContent = 'Defina a ordem em que os treinos se repetem. O próximo treino é sempre calculado a partir do que você fez por último.';
+        schedCard.appendChild(p);
+
+        const list = el('div');
+        data.sequence.forEach((slotId, idx) => {
+          const slotDay = slotId ? data.days.find(d => d.id === slotId) : null;
+          const row = el('div','exercise-tag');
+          row.style.marginBottom = '6px';
+          const label = el('span', null, `${idx+1}. ${slotDay ? slotDay.name : 'Descanso'}`);
+          label.style.flex = '1';
+          row.appendChild(label);
+
+          const upBtn = el('button','rm','&uarr;');
+          upBtn.style.color = 'var(--chalk-dim)';
+          upBtn.disabled = idx===0;
+          upBtn.style.opacity = idx===0 ? '0.3' : '1';
+          upBtn.onclick = () => { [data.sequence[idx-1],data.sequence[idx]]=[data.sequence[idx],data.sequence[idx-1]]; save(); renderConfig(); };
+          row.appendChild(upBtn);
+
+          const downBtn = el('button','rm','&darr;');
+          downBtn.style.color = 'var(--chalk-dim)';
+          downBtn.disabled = idx===data.sequence.length-1;
+          downBtn.style.opacity = idx===data.sequence.length-1 ? '0.3' : '1';
+          downBtn.onclick = () => { [data.sequence[idx+1],data.sequence[idx]]=[data.sequence[idx],data.sequence[idx+1]]; save(); renderConfig(); };
+          row.appendChild(downBtn);
+
+          const rm = el('button','rm','&times;');
+          rm.onclick = () => { data.sequence.splice(idx,1); save(); renderConfig(); };
+          row.appendChild(rm);
+
+          list.appendChild(row);
+        });
+        schedCard.appendChild(list);
+
+        const addRow = el('div','add-exercise-row');
+        const sel = el('select');
+        sel.style.cssText = 'flex:1;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 8px;color:var(--chalk);font-size:13px;';
+        sel.innerHTML = `<option value="">Descanso</option>` + data.days.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+        const addBtn = el('button', null, '+');
+        addBtn.onclick = () => { data.sequence.push(sel.value || null); save(); renderConfig(); };
+        addRow.appendChild(sel);
+        addRow.appendChild(addBtn);
+        schedCard.appendChild(addRow);
+      }
+
       root.appendChild(schedCard);
+
+      const restCard = el('div','card');
+      restCard.innerHTML = `<h3 style="font-size:15px;margin-bottom:4px;">Cronômetro de descanso</h3>
+        <p style="font-size:12px;color:var(--chalk-dim);margin:0 0 12px;">Tempo padrão do timer de descanso entre séries. Funciona melhor com o app aberto (tela pode ficar bloqueada).</p>`;
+      const restRow = el('div','schedule-row');
+      const restInput = el('input');
+      restInput.type = 'number'; restInput.min = '10'; restInput.step = '5';
+      restInput.value = data.defaultRestSeconds;
+      restInput.style.cssText = 'flex:1;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 8px;color:var(--chalk);font-size:13px;';
+      restInput.oninput = () => { const v = parseInt(restInput.value)||90; data.defaultRestSeconds = v; save(); };
+      restRow.appendChild(el('label',null,'Segundos'));
+      restRow.appendChild(restInput);
+      restCard.appendChild(restRow);
+      const notifNote = el('p');
+      const granted = 'Notification' in window && Notification.permission === 'granted';
+      notifNote.style.cssText = `font-size:11px;margin:10px 0 0;color:${granted ? 'var(--green)' : 'var(--amber)'};`;
+      notifNote.textContent = granted ? '✓ Notificações permitidas' : 'Notificações serão pedidas na primeira vez que você usar o timer';
+      restCard.appendChild(notifNote);
+      root.appendChild(restCard);
 
       const exportBtn = el('button','ghost','Exportar backup (copiar dados)');
       exportBtn.onclick = () => {
@@ -804,7 +1078,7 @@
       const wipeBtn = el('button','ghost danger','Apagar todos os dados');
       wipeBtn.onclick = () => {
         if(confirm('Isso vai apagar todos os treinos e histórico permanentemente. Continuar?')){
-          data = { days: [], sessions: [] };
+          data = { days: [], sessions: [], schedule:[null,null,null,null,null,null,null], scheduleMode:'weekday', sequence:[], defaultRestSeconds: 90 };
           save(); renderConfig(); renderHome();
           toast('Dados apagados');
         }
@@ -815,6 +1089,18 @@
 
   // init
   (function initApp(){
+    try{
+      const rawRest = localStorage.getItem(REST_KEY);
+      if(rawRest){
+        const stored = JSON.parse(rawRest);
+        if(stored && stored.running){
+          restTimer = stored;
+          if(Date.now() >= restTimer.endTime) onRestTimerEnd();
+          else renderRestBar();
+        }
+      }
+    }catch(e){}
+
     const draft = loadDraft();
     if(draft && data.days.some(d => d.id === draft.dayId)){
       logState = draft;
